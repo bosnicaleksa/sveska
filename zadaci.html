@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="sr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Zadaci sa kodom · Aleksina sveska</title>
+  <meta name="color-scheme" content="light dark">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@500;700&display=swap">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="site-head">
+    <div class="wrap">
+      <div class="brand">
+        <h1><span class="mark">Z</span>adaci</h1>
+        <p>Kod sa časova: pregled, kopiranje i preuzimanje.</p>
+      </div>
+      <nav class="head-actions" aria-label="Glavna navigacija">
+        <a class="btn" href="index.html">Nazad na svesku</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div class="toolbar" id="toolbar" hidden>
+      <span class="count" id="count" aria-live="polite"></span>
+      <label class="search">
+        <span class="visually-hidden">Pretraga zadataka</span>
+        <input type="search" id="search" placeholder="Traži po naslovu, napomeni, fajlu ili kodu" autocomplete="off">
+      </label>
+      <div class="sort-toggle" role="group" aria-label="Redosled">
+        <button type="button" data-sort="class" aria-pressed="true">Sa časa</button>
+        <button type="button" data-sort="new" aria-pressed="false">Najnovije</button>
+      </div>
+    </div>
+    <div id="tasks"><p class="state" role="status">Učitavanje.</p></div>
+  </main>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script src="config.js"></script>
+  <script src="common.js"></script>
+  <script>
+  "use strict";
+  (function () {
+    const listEl = document.getElementById("tasks");
+    const toolbar = document.getElementById("toolbar");
+    const countEl = document.getElementById("count");
+    const search = document.getElementById("search");
+    const JSZIP_URL = "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
+
+    /*
+     * Redosled: podrazumevano "sa časa" (najstarije prvo), jer se kod čita kao niz
+     * lekcija koje se nadovezuju. Galerija slika je najnovije prvo, jer se tamo traži
+     * poslednji zadatak sa table. Da to ne bi bila skrivena nedoslednost, ovde postoji
+     * prekidač, a izbor se pamti po uređaju.
+     */
+    const SORT_KEY = "sveska_aleksa_kod_redosled";
+    let sort = "class";
+    try { if (localStorage.getItem(SORT_KEY) === "new") sort = "new"; } catch (_) { /* podrazumevano */ }
+
+    let tasks = []; // najstarije prvo; tasks[i].num je redni broj sa časa
+
+    function state(text, kind) {
+      listEl.innerHTML = '<p class="state' + (kind === "error" ? " state-error" : "") + '" role="' +
+        (kind === "error" ? "alert" : "status") + '">' + esc(text) + "</p>";
+    }
+
+    const baseName = (name) => name.split("/").pop();
+    const ext = (name) => (baseName(name).includes(".") ? baseName(name).split(".").pop().toLowerCase() : "");
+
+    function highlightInto(codeEl, file) {
+      if (!window.hljs) { codeEl.textContent = file.code; return; }
+      const lang = ext(file.name);
+      const res = lang && hljs.getLanguage(lang)
+        ? hljs.highlight(file.code, { language: lang, ignoreIllegals: true })
+        : hljs.highlightAuto(file.code);
+      codeEl.className = "hljs" + (res.language ? " language-" + res.language : "");
+      codeEl.innerHTML = res.value; // hljs escape-uje sadržaj
+    }
+
+    function taskHtml(t, id) {
+      const e = t.entry, many = t.files.length > 1;
+      const label = many ? plural(t.files.length, "fajl", "fajla", "fajlova") : t.files[0].name;
+      const tabs = many
+        ? '<div class="tabs" role="tablist" aria-label="Fajlovi">' + t.files.map((f, j) =>
+            '<button type="button" class="tab" role="tab" id="tab-' + id + "-" + j + '" aria-controls="panel-' + id +
+            '" data-tab="' + j + '" aria-selected="' + (j === t.active) + '" tabindex="' + (j === t.active ? 0 : -1) + '">' +
+            esc(f.name) + "</button>").join("") + "</div>"
+        : "";
+      return '<article class="task" data-id="' + id + '" aria-labelledby="title-' + id + '">' +
+        '<header class="task-head">' +
+          '<h2 id="title-' + id + '">' + esc(e.title) + "</h2>" +
+          '<span class="num" aria-label="Redni broj">#' + String(t.num).padStart(2, "0") + "</span>" +
+          '<div class="meta"><span class="tag">' + esc(label) + '</span><span class="date">' + esc(fmtDate(e.createdAt)) + "</span></div>" +
+        "</header>" +
+        (e.note ? '<p class="task-note">' + esc(e.note) + "</p>" : "") +
+        tabs +
+        '<div class="panel-code" id="panel-' + id + '"' + (many ? ' role="tabpanel" aria-labelledby="tab-' + id + "-" + t.active + '"' : "") + "></div>" +
+        '<div class="task-actions">' +
+          '<button type="button" class="btn btn-primary btn-sm" data-act="copy">Kopiraj kod</button>' +
+          '<button type="button" class="btn btn-sm" data-act="download">Preuzmi fajl</button>' +
+          (many ? '<button type="button" class="btn btn-sm" data-act="zip">Preuzmi sve (.zip)</button>' : "") +
+        "</div></article>";
+    }
+
+    function fillPanel(article, t) {
+      const file = t.files[t.active];
+      const panel = article.querySelector(".panel-code");
+      if (file.code == null) {
+        panel.innerHTML = '<p class="code-missing">Fajl nije dostupan. Pokušaj ponovo za koji trenutak.</p>';
+      } else {
+        panel.innerHTML = '<pre class="code"><code></code></pre>';
+        highlightInto(panel.querySelector("code"), file);
+      }
+      const copy = article.querySelector('[data-act="copy"]');
+      if (!copy.dataset.busy) copy.disabled = file.code == null;
+    }
+
+    function render() {
+      const q = norm(search.value.trim());
+      const ordered = sort === "new" ? tasks.slice().reverse() : tasks;
+      const shown = ordered.filter((t) => !q || t.hay.includes(q));
+
+      countEl.textContent = q
+        ? plural(shown.length, "zadatak", "zadatka", "zadataka") + " od " + tasks.length
+        : plural(tasks.length, "zadatak", "zadatka", "zadataka");
+      toolbar.querySelectorAll("[data-sort]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.sort === sort)));
+
+      if (!shown.length) return state("Nijedan zadatak ne odgovara pretrazi.");
+      listEl.innerHTML = '<div class="tasks">' + shown.map((t) => taskHtml(t, tasks.indexOf(t))).join("") + "</div>";
+      listEl.querySelectorAll(".task").forEach((a) => fillPanel(a, tasks[Number(a.dataset.id)]));
+    }
+
+    function selectTab(article, j, focus) {
+      const t = tasks[Number(article.dataset.id)];
+      t.active = j;
+      article.querySelectorAll("[data-tab]").forEach((b) => {
+        const on = Number(b.dataset.tab) === j;
+        b.setAttribute("aria-selected", String(on));
+        b.tabIndex = on ? 0 : -1;
+        if (on && focus) b.focus();
+      });
+      article.querySelector(".panel-code").setAttribute("aria-labelledby", "tab-" + article.dataset.id + "-" + j);
+      fillPanel(article, t);
+    }
+
+    /** Povratna informacija na samom dugmetu, pa vraćanje natpisa posle 1.6 s. */
+    async function withFeedback(btn, okText, action) {
+      const label = btn.textContent;
+      btn.disabled = true;
+      btn.dataset.busy = "1";
+      let text;
+      try { await action(); text = okText; } catch (_) { text = "Nije uspelo"; }
+      btn.textContent = text;
+      setTimeout(() => {
+        btn.textContent = label;
+        delete btn.dataset.busy;
+        const article = btn.closest(".task");
+        const t = article && tasks[Number(article.dataset.id)];
+        btn.disabled = Boolean(t && btn.dataset.act === "copy" && t.files[t.active].code == null);
+      }, 1600);
+    }
+
+    function saveBlob(blob, name) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = name;
+      document.body.append(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+    /** Clipboard API radi samo na https; stari put je rezerva (npr. otvoreno kao lokalni fajl). */
+    async function copyText(text) {
+      if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.setAttribute("readonly", "");
+      ta.className = "visually-hidden";
+      document.body.append(ta);
+      ta.select();
+      const ok = document.execCommand("copy");
+      ta.remove();
+      if (!ok) throw new Error("kopiranje nije uspelo");
+    }
+
+    let jszip = null;
+    function loadJSZip() {
+      if (!jszip) {
+        jszip = new Promise((resolve, reject) => {
+          const s = document.createElement("script");
+          s.src = JSZIP_URL;
+          s.onload = () => (window.JSZip ? resolve(window.JSZip) : reject(new Error("JSZip")));
+          s.onerror = () => { jszip = null; s.remove(); reject(new Error("JSZip")); };
+          document.head.append(s);
+        });
+      }
+      return jszip;
+    }
+
+    const cleanName = (s) => String(s).replace(/[\\/:*?"<>|]/g, "").trim() || "zadatak";
+
+    const actions = {
+      copy: (t) => copyText(t.files[t.active].code),
+      download: (t) => {
+        const f = t.files[t.active];
+        if (f.code == null) throw new Error("nema fajla");
+        saveBlob(new Blob([f.code], { type: "text/plain;charset=utf-8" }), baseName(f.name));
+      },
+      zip: async (t) => {
+        if (t.files.some((f) => f.code == null)) throw new Error("nedostaje fajl");
+        const JSZip = await loadJSZip();
+        const zip = new JSZip();
+        const dir = zip.folder(cleanName(t.entry.title));
+        t.files.forEach((f) => dir.file(f.name, f.code));
+        saveBlob(await zip.generateAsync({ type: "blob" }), cleanName(t.entry.title) + ".zip");
+      }
+    };
+    const okText = { copy: "Kopirano", download: "Preuzeto", zip: "Preuzeto" };
+
+    listEl.addEventListener("click", (ev) => {
+      const article = ev.target.closest(".task");
+      if (!article) return;
+      const tab = ev.target.closest("[data-tab]");
+      if (tab) return selectTab(article, Number(tab.dataset.tab), false);
+      const btn = ev.target.closest("[data-act]");
+      if (btn && !btn.disabled) {
+        const t = tasks[Number(article.dataset.id)];
+        withFeedback(btn, okText[btn.dataset.act], () => actions[btn.dataset.act](t));
+      }
+    });
+
+    listEl.addEventListener("keydown", (ev) => {
+      const tab = ev.target.closest("[data-tab]");
+      if (!tab) return;
+      const article = tab.closest(".task");
+      const n = tasks[Number(article.dataset.id)].files.length;
+      const cur = Number(tab.dataset.tab);
+      const next = { ArrowRight: (cur + 1) % n, ArrowLeft: (cur - 1 + n) % n, Home: 0, End: n - 1 }[ev.key];
+      if (next === undefined) return;
+      ev.preventDefault();
+      selectTab(article, next, true);
+    });
+
+    toolbar.addEventListener("click", (ev) => {
+      const b = ev.target.closest("[data-sort]");
+      if (!b || b.dataset.sort === sort) return;
+      sort = b.dataset.sort;
+      try { localStorage.setItem(SORT_KEY, sort); } catch (_) { /* samo za ovu posetu */ }
+      render();
+    });
+    search.addEventListener("input", render);
+
+    async function loadFile(f, version) {
+      try {
+        const res = await fetch(f.path + "?t=" + version);
+        return res.ok ? await res.text() : null;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    mountGithubLink();
+    loadCode().then(async (list) => {
+      if (!list.length) return state("Nema još nijednog zadatka sa kodom.");
+      const oldestFirst = list.slice().reverse();
+      tasks = await Promise.all(oldestFirst.map(async (entry, i) => {
+        const files = await Promise.all(codeFiles(entry).map(async (f) =>
+          ({ name: f.name || baseName(f.path), path: f.path, code: await loadFile(f, entry.createdAt) })));
+        const hay = norm([entry.title, entry.note].concat(files.map((f) => f.name + "\n" + (f.code || ""))).join("\n"));
+        return { entry, files, active: 0, num: i + 1, hay };
+      }));
+      toolbar.hidden = false;
+      render();
+    }).catch(() => state("Ne mogu da učitam zadatke. Osveži stranicu za koji trenutak.", "error"));
+  })();
+  </script>
+</body>
+</html>

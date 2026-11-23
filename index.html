@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="sr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Aleksina sveska</title>
+  <meta name="color-scheme" content="light dark">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="site-head">
+    <div class="wrap">
+      <div class="brand">
+        <h1><span class="mark">A</span>leksina sveska</h1>
+        <p>Zadaci sa časa i table, na jednom mestu.</p>
+      </div>
+      <nav class="head-actions" aria-label="Glavna navigacija">
+        <a class="btn" href="zadaci.html">Prikaži zadatke</a>
+        <a class="btn btn-primary" href="upload.html">Uredi zadatke</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div class="toolbar" id="toolbar" hidden>
+      <span class="count" id="count" aria-live="polite"></span>
+      <label class="search">
+        <span class="visually-hidden">Pretraga zadataka</span>
+        <input type="search" id="search" placeholder="Traži po naslovu, predmetu ili napomeni" autocomplete="off">
+      </label>
+    </div>
+    <div id="gallery"><p class="state" role="status">Učitavanje.</p></div>
+  </main>
+
+  <div class="lightbox" id="lightbox" role="dialog" aria-modal="true" aria-labelledby="lbTitle" hidden>
+    <div class="lb-bar">
+      <div class="lb-info">
+        <h2 id="lbTitle"></h2>
+        <div class="lb-meta"><span class="tag" id="lbSubject"></span><span id="lbDate"></span></div>
+      </div>
+      <div class="lb-tools">
+        <button type="button" class="lb-btn" data-act="out" aria-label="Umanji">−</button>
+        <span class="lb-zoom" id="lbZoom" aria-live="polite">100%</span>
+        <button type="button" class="lb-btn" data-act="in" aria-label="Uvećaj">+</button>
+        <button type="button" class="lb-btn" data-act="fit">Uklopi</button>
+        <a class="lb-btn" id="lbOriginal" target="_blank" rel="noopener">Original</a>
+        <button type="button" class="lb-btn" data-act="close" id="lbClose" aria-label="Zatvori">×</button>
+      </div>
+    </div>
+    <div class="lb-stage" id="lbStage">
+      <img class="lb-img" id="lbImg" alt="" draggable="false">
+    </div>
+    <div class="lb-foot">
+      <p class="lb-note" id="lbNote" hidden></p>
+      <p class="lb-hint">Točkić, dupli klik ili + / − za zum · prevuci za pomeranje · Esc zatvara</p>
+    </div>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="common.js"></script>
+  <script>
+  "use strict";
+  (function () {
+    const gallery = document.getElementById("gallery");
+    const toolbar = document.getElementById("toolbar");
+    const countEl = document.getElementById("count");
+    const search = document.getElementById("search");
+    let entries = [];
+
+    function state(text, kind) {
+      gallery.innerHTML = '<p class="state' + (kind === "error" ? " state-error" : "") + '" role="' +
+        (kind === "error" ? "alert" : "status") + '">' + esc(text) + "</p>";
+    }
+
+    function render() {
+      const q = norm(search.value.trim());
+      const shown = entries
+        .map((e, i) => ({ e, i }))
+        .filter(({ e }) => !q || norm(e.title + " " + (e.subject || "") + " " + (e.note || "")).includes(q));
+
+      countEl.textContent = q
+        ? plural(shown.length, "zadatak", "zadatka", "zadataka") + " od " + entries.length
+        : plural(entries.length, "zadatak", "zadatka", "zadataka");
+
+      if (!shown.length) return state("Nijedan zadatak ne odgovara pretrazi.");
+      gallery.innerHTML = '<div class="grid">' + shown.map(({ e, i }) =>
+        '<div class="card" tabindex="0" role="button" data-i="' + i + '" aria-label="Otvori: ' + esc(e.title) + '">' +
+          '<img class="card-img" src="' + esc(e.imagePath) + '" alt="" loading="lazy">' +
+          '<div class="card-body">' +
+            '<div class="card-top"><span class="tag">' + esc(e.subject || "Opšte") + '</span>' +
+            '<span class="date">' + esc(fmtDate(e.createdAt)) + "</span></div>" +
+            '<h2 class="card-title">' + esc(e.title) + "</h2>" +
+          "</div></div>").join("") + "</div>";
+    }
+
+    function openFromEvent(ev) {
+      const card = ev.target.closest("[data-i]");
+      if (card) Lightbox.open(entries[Number(card.dataset.i)], card);
+    }
+    gallery.addEventListener("click", openFromEvent);
+    gallery.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter" || ev.key === " ") {
+        if (!ev.target.matches("[data-i]")) return;
+        ev.preventDefault();
+        openFromEvent(ev);
+      }
+    });
+    search.addEventListener("input", render);
+
+    /* ---------- Lightbox ---------- */
+    const Lightbox = (function () {
+      const box = document.getElementById("lightbox");
+      const stage = document.getElementById("lbStage");
+      const img = document.getElementById("lbImg");
+      const zoomEl = document.getElementById("lbZoom");
+      const closeBtn = document.getElementById("lbClose");
+      const MIN = 1, MAX = 8;
+
+      // z je zum u odnosu na "uklopljeno" (1 = 100%). base je razmera koja sliku uklapa
+      // u prostor, nikad veća od 1, pa 100% nikad ne uvećava sliku iznad prirodne veličine.
+      let natW = 0, natH = 0, base = 1, z = 1, x = 0, y = 0;
+      let opener = null;
+      const pointers = new Map();
+      let last = null, moved = false;
+
+      const scale = () => base * z;
+
+      function clamp() {
+        const w = natW * scale(), h = natH * scale();
+        const sw = stage.clientWidth, sh = stage.clientHeight;
+        x = w <= sw ? (sw - w) / 2 : Math.min(0, Math.max(sw - w, x));
+        y = h <= sh ? (sh - h) / 2 : Math.min(0, Math.max(sh - h, y));
+      }
+
+      function apply() {
+        clamp();
+        img.style.transform = "translate(" + x + "px," + y + "px) scale(" + scale() + ")";
+        zoomEl.textContent = Math.round(z * 100) + "%";
+      }
+
+      function fit() {
+        if (!natW) return;
+        base = Math.min(stage.clientWidth / natW, stage.clientHeight / natH, 1);
+        z = 1;
+        apply();
+      }
+
+      /** Zum oko tačke (px, py) u koordinatama prostora: ta tačka slike ostaje na mestu. */
+      function zoomAt(newZ, px, py) {
+        newZ = Math.min(MAX, Math.max(MIN, newZ));
+        const k = newZ / z;
+        x = px - (px - x) * k;
+        y = py - (py - y) * k;
+        z = newZ;
+        apply();
+      }
+
+      const center = () => [stage.clientWidth / 2, stage.clientHeight / 2];
+      function local(ev) {
+        const r = stage.getBoundingClientRect();
+        return [ev.clientX - r.left, ev.clientY - r.top];
+      }
+
+      stage.addEventListener("wheel", (ev) => {
+        ev.preventDefault();
+        const [px, py] = local(ev);
+        zoomAt(ev.deltaY < 0 ? z * 1.18 : z / 1.18, px, py);
+      }, { passive: false });
+
+      // Trenutno stanje prstiju: sredina i razmak (za pinch). Pamti se pri svakom
+      // pritisku i podizanju, pa prvi pokret ne gubi korak i nema skoka.
+      function snapshot() {
+        const pts = [...pointers.values()];
+        if (!pts.length) return null;
+        if (pts.length === 1) return { n: 1, mx: pts[0][0], my: pts[0][1], d: 0 };
+        const [a, b] = pts;
+        return { n: 2, mx: (a[0] + b[0]) / 2, my: (a[1] + b[1]) / 2, d: Math.hypot(a[0] - b[0], a[1] - b[1]) };
+      }
+
+      stage.addEventListener("pointerdown", (ev) => {
+        try { stage.setPointerCapture(ev.pointerId); } catch (_) { /* pointer već nestao */ }
+        if (!pointers.size) moved = false;
+        pointers.set(ev.pointerId, local(ev));
+        last = snapshot();
+        stage.classList.add("dragging");
+      });
+
+      stage.addEventListener("pointermove", (ev) => {
+        if (!pointers.has(ev.pointerId)) return;
+        pointers.set(ev.pointerId, local(ev));
+        const cur = snapshot();
+        if (last && last.n === cur.n) {
+          const dx = cur.mx - last.mx, dy = cur.my - last.my;
+          if (Math.abs(dx) + Math.abs(dy) > 2) moved = true;
+          x += dx; y += dy;
+          if (cur.n === 2 && last.d > 0) zoomAt(z * (cur.d / last.d), cur.mx, cur.my);
+          else apply();
+        }
+        last = cur;
+      });
+
+      function release(ev) {
+        pointers.delete(ev.pointerId);
+        last = snapshot(); // preostali prst nastavlja prevlačenje bez skoka
+        if (!pointers.size) stage.classList.remove("dragging");
+      }
+      stage.addEventListener("pointerup", release);
+      stage.addEventListener("pointercancel", release);
+
+      stage.addEventListener("dblclick", (ev) => {
+        if (moved) { moved = false; return; }
+        if (z > 1.05) return fit();
+        const [px, py] = local(ev);
+        zoomAt(2.6, px, py);
+      });
+
+      box.addEventListener("click", (ev) => {
+        const btn = ev.target.closest("[data-act]");
+        if (!btn) return;
+        const [cx, cy] = center();
+        const act = btn.dataset.act;
+        if (act === "in") zoomAt(z * 1.35, cx, cy);
+        else if (act === "out") zoomAt(z / 1.35, cx, cy);
+        else if (act === "fit") fit();
+        else if (act === "close") close();
+      });
+
+      function onKey(ev) {
+        const [cx, cy] = center();
+        if (ev.key === "Escape") { ev.preventDefault(); close(); }
+        else if (ev.key === "+" || ev.key === "=") { ev.preventDefault(); zoomAt(z * 1.3, cx, cy); }
+        else if (ev.key === "-" || ev.key === "_") { ev.preventDefault(); zoomAt(z / 1.3, cx, cy); }
+        else if (ev.key === "0") { ev.preventDefault(); fit(); }
+        else if (ev.key === "Tab") trapFocus(ev);
+      }
+
+      function trapFocus(ev) {
+        const items = [...box.querySelectorAll("button, a[href]")].filter((n) => n.offsetParent !== null);
+        if (!items.length) return;
+        const first = items[0], lastItem = items[items.length - 1];
+        if (ev.shiftKey && document.activeElement === first) { ev.preventDefault(); lastItem.focus(); }
+        else if (!ev.shiftKey && document.activeElement === lastItem) { ev.preventDefault(); first.focus(); }
+      }
+
+      function open(e, from) {
+        opener = from || null;
+        document.getElementById("lbTitle").textContent = e.title;
+        document.getElementById("lbSubject").textContent = e.subject || "Opšte";
+        document.getElementById("lbDate").textContent = fmtDate(e.createdAt);
+        const note = document.getElementById("lbNote");
+        note.textContent = e.note || "";
+        note.hidden = !e.note;
+        document.getElementById("lbOriginal").href = e.imagePath;
+
+        natW = natH = 0;
+        img.style.transform = "scale(0)";
+        img.onload = () => { natW = img.naturalWidth; natH = img.naturalHeight; fit(); };
+        img.alt = e.title;
+        img.src = e.imagePath;
+
+        box.hidden = false;
+        document.body.classList.add("no-scroll");
+        document.addEventListener("keydown", onKey);
+        window.addEventListener("resize", fit);
+        if (img.complete && img.naturalWidth) img.onload();
+        closeBtn.focus();
+      }
+
+      function close() {
+        box.hidden = true;
+        document.body.classList.remove("no-scroll");
+        document.removeEventListener("keydown", onKey);
+        window.removeEventListener("resize", fit);
+        pointers.clear();
+        img.onload = null;
+        img.removeAttribute("src");
+        if (opener && opener.isConnected) opener.focus();
+        opener = null;
+      }
+
+      return { open };
+    })();
+
+    mountGithubLink();
+    loadEntries().then((list) => {
+      entries = list;
+      if (!entries.length) return state("Nema još nijednog zadatka.");
+      toolbar.hidden = false;
+      render();
+    }).catch(() => state("Ne mogu da učitam svesku. Osveži stranicu za koji trenutak.", "error"));
+  })();
+  </script>
+</body>
+</html>

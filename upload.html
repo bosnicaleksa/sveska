@@ -1,0 +1,737 @@
+<!doctype html>
+<html lang="sr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Uređivanje · Aleksina sveska</title>
+  <meta name="color-scheme" content="light dark">
+  <meta name="robots" content="noindex">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@500;700&display=swap">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="site-head">
+    <div class="wrap">
+      <div class="brand">
+        <h1><span class="mark">U</span>ređivanje</h1>
+        <p>Dodavanje i brisanje zadataka.</p>
+      </div>
+      <nav class="head-actions" aria-label="Glavna navigacija">
+        <a class="btn" href="index.html">Galerija</a>
+        <a class="btn" href="zadaci.html">Kod</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <!-- Prijava -->
+    <section class="panel" id="loginBox" aria-labelledby="loginTitle">
+      <h2 id="loginTitle">Prijava</h2>
+      <form id="loginForm" novalidate>
+        <div class="field">
+          <label for="tokenInput">GitHub token</label>
+          <input type="password" id="tokenInput" autocomplete="off" spellcheck="false" placeholder="github_pat_…" required>
+        </div>
+        <button type="submit" class="btn btn-primary" id="loginBtn">Prijavi se</button>
+        <p class="msg" id="loginMsg" role="status"></p>
+      </form>
+      <div class="help">
+        Token se pravi na GitHub-u: <em>Settings → Developer settings → Fine-grained tokens</em>.
+        <ol>
+          <li>Repository access: samo <strong>sveska</strong>.</li>
+          <li>Permissions: <strong>Contents: Read and write</strong>. Ništa više.</li>
+          <li>Rok trajanja: do kraja školske godine.</li>
+        </ol>
+        Token se čuva samo u ovom browseru, i to tek kad ga GitHub prihvati.
+      </div>
+    </section>
+
+    <!-- Uređivanje -->
+    <div id="editor" hidden>
+      <div class="row row-between section-bottom">
+        <p class="msg ok" id="whoami">Prijavljen.</p>
+        <button type="button" class="btn btn-sm btn-danger" id="logoutBtn">Odjavi se sa ovog uređaja</button>
+      </div>
+
+      <div class="columns">
+        <!-- Novi zadatak sa slikom -->
+        <section class="panel" aria-labelledby="imgFormTitle">
+          <h2 id="imgFormTitle">Novi zadatak sa slikom</h2>
+          <form id="imgForm" novalidate>
+            <fieldset class="bare" id="imgFieldset">
+              <div class="field">
+                <label for="imgTitle">Naslov</label>
+                <input type="text" id="imgTitle" maxlength="120" required>
+              </div>
+              <div class="field">
+                <label for="imgSubject">Predmet <span class="hint">(opciono)</span></label>
+                <input type="text" id="imgSubject" maxlength="60" placeholder="Opšte">
+              </div>
+              <div class="field">
+                <label for="imgNote">Napomena <span class="hint">(opciono)</span></label>
+                <textarea id="imgNote" maxlength="2000"></textarea>
+              </div>
+              <div class="field">
+                <span class="label" id="imgLabel">Slika</span>
+                <input type="file" id="imgFile" class="visually-hidden" accept="image/*" aria-labelledby="imgLabel">
+                <div class="row"><button type="button" class="btn" id="imgPick">Izaberi sliku</button></div>
+                <div class="preview" id="imgPreview" hidden>
+                  <img id="imgPreviewImg" alt="Pregled izabrane slike">
+                  <button type="button" class="remove" id="imgClear" aria-label="Ukloni sliku">×</button>
+                </div>
+                <p class="hint" id="imgInfo" aria-live="polite"></p>
+              </div>
+              <button type="submit" class="btn btn-primary" id="imgSave">Sačuvaj zadatak</button>
+            </fieldset>
+            <p class="msg" id="imgMsg" role="status"></p>
+          </form>
+        </section>
+
+        <!-- Novi zadatak sa kodom -->
+        <section class="panel" aria-labelledby="codeFormTitle">
+          <h2 id="codeFormTitle">Novi zadatak sa kodom</h2>
+          <form id="codeForm" novalidate>
+            <fieldset class="bare" id="codeFieldset">
+              <div class="field">
+                <label for="codeTitle">Naslov <span class="hint">(opciono)</span></label>
+                <input type="text" id="codeTitle" maxlength="120" placeholder="Zadatak">
+              </div>
+              <div class="field">
+                <label for="codeNote">Napomena <span class="hint">(opciono)</span></label>
+                <textarea id="codeNote" maxlength="2000"></textarea>
+              </div>
+              <div class="field">
+                <span class="label">Kod</span>
+                <input type="file" id="codeDir" class="visually-hidden" webkitdirectory multiple tabindex="-1" aria-hidden="true">
+                <input type="file" id="codeFiles" class="visually-hidden" multiple tabindex="-1" aria-hidden="true">
+                <div class="row">
+                  <button type="button" class="btn" id="pickDir">Izaberi folder</button>
+                  <button type="button" class="btn" id="pickFiles">Izaberi fajlove</button>
+                </div>
+                <ul class="pick-list" id="pickList" hidden></ul>
+                <p class="hint" id="pickMsg" aria-live="polite">Može ceo Visual Studio folder: bin, obj i ostalo se preskače.</p>
+              </div>
+              <button type="submit" class="btn btn-primary" id="codeSave">Sačuvaj kod</button>
+            </fieldset>
+            <p class="msg" id="codeMsg" role="status"></p>
+          </form>
+        </section>
+      </div>
+
+      <!-- Lista zadataka sa slikom -->
+      <section class="panel section-gap" aria-labelledby="imgListTitle">
+        <div class="row row-between section-bottom">
+          <h2 id="imgListTitle">Zadaci sa slikom</h2>
+          <div class="row">
+            <span class="count" id="imgCount"></span>
+            <button type="button" class="btn btn-sm" id="imgRefresh">Osveži listu</button>
+          </div>
+        </div>
+        <p class="msg" id="imgListMsg" role="status"></p>
+        <div id="imgList"></div>
+      </section>
+
+      <!-- Lista zadataka sa kodom -->
+      <section class="panel section-gap" aria-labelledby="codeListTitle">
+        <div class="row row-between section-bottom">
+          <h2 id="codeListTitle">Zadaci sa kodom</h2>
+          <div class="row">
+            <span class="count" id="codeCount"></span>
+            <button type="button" class="btn btn-sm" id="codeRefresh">Osveži listu</button>
+          </div>
+        </div>
+        <p class="msg" id="codeListMsg" role="status"></p>
+        <div id="codeList"></div>
+      </section>
+    </div>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="common.js"></script>
+  <script>
+  "use strict";
+  (function () {
+    const $ = (id) => document.getElementById(id);
+    const TOKEN_KEY = "sveska_aleksa_gh_token";
+    let token = "";
+
+    // localStorage može da baci izuzetak (privatni prozor, blokirani podaci).
+    const store = {
+      get() { try { return localStorage.getItem(TOKEN_KEY) || ""; } catch (_) { return ""; } },
+      set(t) { try { localStorage.setItem(TOKEN_KEY, t); } catch (_) { /* važi do zatvaranja */ } },
+      clear() { try { localStorage.removeItem(TOKEN_KEY); } catch (_) { /* nema šta */ } }
+    };
+
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+    function setMsg(el, text, kind) {
+      el.textContent = text || "";
+      el.className = "msg" + (kind ? " " + kind : "");
+    }
+
+    /* ================= GitHub API ================= */
+
+    class GhError extends Error {
+      constructor(status, message) { super(message); this.status = status; }
+    }
+
+    function ghError(status, body) {
+      if (status === 401) return "Token je istekao ili nije ispravan.";
+      if (status === 403) return /rate limit/i.test(body)
+        ? "GitHub je privremeno ograničio broj zahteva. Pokušaj za nekoliko minuta."
+        : "Token nema dozvolu za pisanje. Treba mu Contents: Read and write.";
+      if (status === 404) return "Repo " + SITE.owner + "/" + SITE.repo + " nije nađen, ili token nema pristup njemu.";
+      if (status === 409 || status === 422) return "Fajl je u međuvremenu promenjen. Pokušaj ponovo.";
+      return "GitHub greška " + status + (body ? ": " + body.slice(0, 160) : "");
+    }
+
+    async function gh(path, opts) {
+      const o = opts || {};
+      const headers = {
+        Authorization: "Bearer " + (o.auth || token),
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28"
+      };
+      if (o.body) headers["Content-Type"] = "application/json";
+      let res;
+      try {
+        res = await fetch(SITE.apiBase + path, {
+          method: o.method || "GET", headers, cache: "no-store",
+          body: o.body ? JSON.stringify(o.body) : undefined
+        });
+      } catch (_) {
+        throw new GhError(0, "Nema veze sa GitHub-om. Proveri internet.");
+      }
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new GhError(res.status, ghError(res.status, text));
+      }
+      return res.status === 204 ? null : res.json();
+    }
+
+    function decodeBase64Utf8(b64) {
+      const bin = atob(b64.replace(/\s/g, ""));
+      return new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0)));
+    }
+
+    const headCommit = async () => (await gh("/git/ref/heads/" + SITE.branch)).object.sha;
+
+    async function readJsonAt(path, ref) {
+      let file;
+      try {
+        file = await gh("/contents/" + path + "?ref=" + ref);
+      } catch (e) {
+        if (e.status === 404) return []; // nema fajla = nema zadataka
+        throw e;
+      }
+      // Contents API ne vraća sadržaj fajlova većih od 1 MB; tada ide preko bloba.
+      const b64 = file.content ? file.content : (await gh("/git/blobs/" + file.sha)).content;
+      const data = JSON.parse(decodeBase64Utf8(b64));
+      if (!Array.isArray(data)) throw new Error(path + " nije niz.");
+      return data;
+    }
+
+    /** Indeks direktno iz repoa (ne sa Pages), plus SHA commita na kom je pročitan. */
+    async function readIndex(path) {
+      const sha = await headCommit();
+      return { entries: await readJsonAt(path, sha), sha };
+    }
+
+    /**
+     * Jedan atomski commit za oba tipa zadataka.
+     * build(entries) vraća { entries, files }, gde je fajl
+     *   { path, content: "tekst" }  – tekstualni fajl
+     *   { path, base64: "..." }     – binarni fajl (slika), ide kao blob
+     *   { path, content: null }     – brisanje
+     * Ref se pomera bez force; ako je u međuvremenu stigao drugi commit (409/422),
+     * sve se ponavlja nad novim stanjem, do 4 pokušaja.
+     */
+    async function commitChanges(indexPath, build, message, onPhase) {
+      const phase = onPhase || (() => {});
+      const blobs = new Map(); // isti blob se ne šalje ponovo pri novom pokušaju
+      for (let attempt = 1; ; attempt++) {
+        try {
+          phase("Čitam repo…");
+          const parent = await headCommit();
+          const baseTree = (await gh("/git/commits/" + parent)).tree.sha;
+          const next = build(await readJsonAt(indexPath, parent));
+
+          const tree = [{ path: indexPath, mode: "100644", type: "blob", content: JSON.stringify(next.entries, null, 2) + "\n" }];
+
+          // Brisanje putanje koje nema u repou GitHub odbija, pa se brišu samo postojeće.
+          let existing = null;
+          if (next.files.some((f) => f.content === null)) {
+            const t = await gh("/git/trees/" + baseTree + "?recursive=1");
+            if (!t.truncated) existing = new Set(t.tree.map((n) => n.path));
+          }
+
+          for (const f of next.files) {
+            if (f.content === null) {
+              if (!existing || existing.has(f.path)) tree.push({ path: f.path, mode: "100644", type: "blob", sha: null });
+            } else if (f.base64 !== undefined) {
+              phase("Šaljem sliku…");
+              let sha = blobs.get(f.path);
+              if (!sha) {
+                sha = (await gh("/git/blobs", { method: "POST", body: { content: f.base64, encoding: "base64" } })).sha;
+                blobs.set(f.path, sha);
+              }
+              tree.push({ path: f.path, mode: "100644", type: "blob", sha });
+            } else {
+              tree.push({ path: f.path, mode: "100644", type: "blob", content: f.content });
+            }
+          }
+
+          phase("Pravim commit…");
+          const newTree = await gh("/git/trees", { method: "POST", body: { base_tree: baseTree, tree } });
+          const commit = await gh("/git/commits", { method: "POST", body: { message, tree: newTree.sha, parents: [parent] } });
+          await gh("/git/refs/heads/" + SITE.branch, { method: "PATCH", body: { sha: commit.sha, force: false } });
+          return commit.sha;
+        } catch (e) {
+          if ((e.status === 409 || e.status === 422) && attempt < 4) {
+            await sleep(250 * attempt);
+            continue;
+          }
+          throw e;
+        }
+      }
+    }
+
+    const newId = () => String(Date.now()) + "-" + Math.random().toString(36).slice(2, 8);
+
+    const rawUrl = (sha, path) => "https://raw.githubusercontent.com/" + SITE.owner + "/" + SITE.repo + "/" + sha + "/" +
+      path.split("/").map(encodeURIComponent).join("/");
+
+    /** Dugme za snimanje: spinner + faza, pa vraćanje natpisa. */
+    function busy(btn, on, text) {
+      if (on) {
+        btn.dataset.label = btn.dataset.label || btn.textContent;
+        btn.innerHTML = '<span class="spinner" aria-hidden="true"></span><span>' + esc(text) + "</span>";
+      } else {
+        btn.textContent = btn.dataset.label;
+      }
+    }
+
+    /* ================= Liste (jedna funkcija za oba tipa) ================= */
+
+    const byNewest = (a, b) => (b.createdAt || 0) - (a.createdAt || 0);
+
+    function listState(el, text, kind) {
+      el.innerHTML = '<p class="state' + (kind === "error" ? " state-error" : "") + '">' + esc(text) + "</p>";
+    }
+
+    const lists = {
+      img: {
+        path: "entries.json",
+        isValid: isValidEntry,
+        listEl: $("imgList"), countEl: $("imgCount"), msgEl: $("imgListMsg"),
+        count: (n) => plural(n, "zadatak", "zadatka", "zadataka"),
+        empty: "Nema još nijednog zadatka sa slikom.",
+        wrap: "thumbs",
+        row: (e, sha) =>
+          '<div class="thumb">' +
+            '<img src="' + esc(rawUrl(sha, e.imagePath)) + '" alt="" loading="lazy">' +
+            '<div class="thumb-body"><strong>' + esc(e.title) + "</strong>" +
+            '<div class="row"><span class="tag">' + esc(e.subject || "Opšte") + '</span><span class="date">' + esc(fmtDate(e.createdAt)) + "</span></div>" +
+            '<button type="button" class="btn btn-sm btn-danger" data-act="del" data-id="' + esc(e.id) + '">Obriši</button></div>' +
+          "</div>",
+        filesOf: (e) => [e.imagePath],
+        removeMsg: (e) => "Ukloni zadatak sa slikom: " + e.title,
+        items: []
+      },
+      code: {
+        path: "kod.json",
+        isValid: isValidCode,
+        listEl: $("codeList"), countEl: $("codeCount"), msgEl: $("codeListMsg"),
+        count: (n) => "Kod: " + n,
+        empty: "Nema još nijednog zadatka sa kodom.",
+        wrap: "list",
+        row: (e) => {
+          const files = codeFiles(e);
+          const label = files.length > 1 ? plural(files.length, "fajl", "fajla", "fajlova") : files[0].name;
+          return '<div class="list-row"><div class="grow"><strong>' + esc(e.title) + "</strong>" +
+            '<div class="row"><span class="tag">' + esc(label) + '</span><span class="date">' + esc(fmtDate(e.createdAt)) + "</span></div></div>" +
+            '<button type="button" class="btn btn-sm btn-danger" data-act="del" data-id="' + esc(e.id) + '">Obriši</button></div>';
+        },
+        filesOf: (e) => codeFiles(e).map((f) => f.path),
+        removeMsg: (e) => "Ukloni zadatak sa kodom: " + e.title,
+        items: []
+      }
+    };
+
+    async function refreshList(cfg) {
+      listState(cfg.listEl, "Učitavanje.");
+      try {
+        const { entries, sha } = await readIndex(cfg.path);
+        cfg.items = entries.filter(cfg.isValid).sort(byNewest); // najnovije prvo, kao galerija
+        cfg.countEl.textContent = cfg.count(cfg.items.length);
+        if (!cfg.items.length) return listState(cfg.listEl, cfg.empty);
+        cfg.listEl.innerHTML = '<div class="' + cfg.wrap + '">' + cfg.items.map((e) => cfg.row(e, sha)).join("") + "</div>";
+      } catch (e) {
+        cfg.countEl.textContent = "";
+        listState(cfg.listEl, e.message, "error");
+      }
+    }
+
+    async function removeEntry(cfg, btn) {
+      const entry = cfg.items.find((e) => e.id === btn.dataset.id);
+      if (!entry || !confirm("Obrisati „" + entry.title + "“? Ovo ne može da se vrati.")) return;
+      btn.disabled = true;
+      busy(btn, true, "Brišem…");
+      setMsg(cfg.msgEl, "");
+      try {
+        await commitChanges(cfg.path, (entries) => ({
+          entries: entries.filter((e) => e.id !== entry.id),
+          files: cfg.filesOf(entry).map((path) => ({ path, content: null }))
+        }), cfg.removeMsg(entry));
+        setMsg(cfg.msgEl, "Obrisano: " + entry.title, "ok");
+        await refreshList(cfg);
+      } catch (e) {
+        btn.disabled = false;
+        busy(btn, false);
+        setMsg(cfg.msgEl, e.message, "err");
+      }
+    }
+
+    Object.values(lists).forEach((cfg) => {
+      cfg.listEl.addEventListener("click", (ev) => {
+        const btn = ev.target.closest('[data-act="del"]');
+        if (btn && !btn.disabled) removeEntry(cfg, btn);
+      });
+    });
+    $("imgRefresh").addEventListener("click", () => refreshList(lists.img));
+    $("codeRefresh").addEventListener("click", () => refreshList(lists.code));
+
+    /* ================= Prijava ================= */
+
+    function showEditor() {
+      $("loginBox").hidden = true;
+      $("editor").hidden = false;
+      refreshList(lists.img);
+      refreshList(lists.code);
+    }
+
+    $("loginForm").addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const t = $("tokenInput").value.trim();
+      const msg = $("loginMsg");
+      if (!t) return setMsg(msg, "Unesi token.", "err");
+      const btn = $("loginBtn");
+      btn.disabled = true;
+      setMsg(msg, "Proveravam token…");
+      try {
+        await gh("", { auth: t }); // GET SITE.apiBase
+        token = t;
+        store.set(t); // čuva se tek kad GitHub prihvati token
+        $("tokenInput").value = "";
+        setMsg(msg, "");
+        showEditor();
+      } catch (e) {
+        setMsg(msg, e.message + " Token nije sačuvan.", "err");
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    $("logoutBtn").addEventListener("click", () => {
+      if (!confirm("Odjaviti se sa ovog uređaja? Token će biti obrisan iz browsera.")) return;
+      store.clear();
+      location.reload();
+    });
+
+    /* ================= Novi zadatak sa slikom ================= */
+
+    let image = null; // { blob, base64, url }
+
+    function clearImage() {
+      if (image) URL.revokeObjectURL(image.url);
+      image = null;
+      $("imgFile").value = "";
+      $("imgPreview").hidden = true;
+      $("imgPreviewImg").removeAttribute("src");
+      $("imgInfo").textContent = "";
+    }
+
+    async function compressImage(file) {
+      const src = URL.createObjectURL(file);
+      try {
+        const img = await new Promise((resolve, reject) => {
+          const i = new Image();
+          i.onload = () => resolve(i);
+          i.onerror = () => reject(new Error("Browser ne može da pročita ovu sliku. Probaj JPG ili PNG."));
+          i.src = src;
+        });
+        const k = Math.min(1, 1400 / Math.max(img.naturalWidth, img.naturalHeight));
+        const w = Math.max(1, Math.round(img.naturalWidth * k));
+        const h = Math.max(1, Math.round(img.naturalHeight * k));
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = "#ffffff"; // bela pozadina umesto PNG providnosti (JPEG je nema)
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        return await new Promise((resolve, reject) =>
+          canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Kompresija slike nije uspela."))), "image/jpeg", 0.75));
+      } finally {
+        URL.revokeObjectURL(src);
+      }
+    }
+
+    const blobToBase64 = (blob) => new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result).split(",")[1]);
+      r.onerror = () => reject(new Error("Ne mogu da pročitam sliku."));
+      r.readAsDataURL(blob);
+    });
+
+    $("imgPick").addEventListener("click", () => $("imgFile").click());
+    $("imgClear").addEventListener("click", () => { clearImage(); $("imgPick").focus(); });
+
+    $("imgFile").addEventListener("change", async () => {
+      const file = $("imgFile").files[0];
+      if (!file) return;
+      if (image) URL.revokeObjectURL(image.url);
+      image = null;
+      $("imgInfo").textContent = "Pripremam sliku…";
+      try {
+        const blob = await compressImage(file);
+        image = { blob, base64: await blobToBase64(blob), url: URL.createObjectURL(blob) };
+        $("imgPreviewImg").src = image.url;
+        $("imgPreview").hidden = false;
+        $("imgInfo").textContent = "Spremno, oko " + Math.max(1, Math.round(blob.size / 1024)) + " KB.";
+      } catch (e) {
+        clearImage();
+        $("imgInfo").textContent = e.message;
+      }
+    });
+
+    let imgMsgTimer = 0;
+    $("imgForm").addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const msg = $("imgMsg");
+      clearTimeout(imgMsgTimer);
+      const title = $("imgTitle").value.trim();
+      if (!title) { setMsg(msg, "Naslov je obavezan.", "err"); return $("imgTitle").focus(); }
+      if (!image) { setMsg(msg, "Izaberi sliku.", "err"); return $("imgPick").focus(); }
+
+      const id = newId();
+      const entry = {
+        id,
+        title,
+        subject: $("imgSubject").value.trim() || "Opšte",
+        note: $("imgNote").value.trim(),
+        imagePath: "images/" + id + ".jpg",
+        createdAt: Date.now()
+      };
+      const btn = $("imgSave");
+      $("imgFieldset").disabled = true;
+      setMsg(msg, "");
+      try {
+        await commitChanges("entries.json", (entries) => ({
+          entries: entries.concat(entry),
+          files: [{ path: entry.imagePath, base64: image.base64 }]
+        }), "Dodaj zadatak sa slikom: " + title, (p) => busy(btn, true, p));
+        $("imgForm").reset();
+        clearImage();
+        setMsg(msg, "Sačuvano.", "ok");
+        imgMsgTimer = setTimeout(() => setMsg(msg, ""), 4000);
+        refreshList(lists.img);
+      } catch (e) {
+        setMsg(msg, e.message + " Ništa nije sačuvano.", "err");
+      } finally {
+        busy(btn, false);
+        $("imgFieldset").disabled = false;
+      }
+    });
+
+    /* ================= Novi zadatak sa kodom ================= */
+
+    const CODE_EXT = new Set("cs vb fs c h cpp hpp cc java kt py js ts jsx tsx html css sql php go rs rb swift sh ps1".split(" "));
+    const SKIP_DIRS = new Set("bin obj debug release x64 packages properties .vs .vscode .idea .git node_modules __pycache__ venv .venv".split(" "));
+    const MAX_FILES = 30, MAX_BYTES = 500 * 1024;
+    const ENTRY_POINT = /^(program|main|index|app)\.[^.]+$/i;
+
+    const extOf = (name) => (name.includes(".") ? name.split(".").pop().toLowerCase() : "");
+
+    /** zadatak1/zadatak1/Program.cs → Program.cs (zajednički početni folderi se skidaju). */
+    function stripCommonDirs(items) {
+      while (items.length && items.every((i) => i.parts.length > 1 && i.parts[0] === items[0].parts[0])) {
+        items.forEach((i) => i.parts.shift());
+      }
+    }
+
+    async function readCodePick(fileList) {
+      const all = Array.from(fileList);
+      const picked = [];
+      let skipped = 0;
+      for (const file of all) {
+        const parts = (file.webkitRelativePath || file.name).replace(/\\/g, "/").split("/").filter(Boolean);
+        const dirs = parts.slice(0, -1);
+        if (dirs.some((d) => SKIP_DIRS.has(d.toLowerCase())) || !CODE_EXT.has(extOf(parts[parts.length - 1]))) {
+          skipped++;
+          continue;
+        }
+        picked.push({ file, parts });
+      }
+      if (picked.length > MAX_FILES) throw new Error("Previše fajlova sa kodom (" + picked.length + "). Najviše " + MAX_FILES + ".");
+      const bytes = picked.reduce((s, p) => s + p.file.size, 0);
+      if (bytes > MAX_BYTES) throw new Error("Kod ima " + Math.round(bytes / 1024) + " KB. Najviše 500 KB ukupno.");
+
+      const items = [];
+      for (const p of picked) {
+        const text = await p.file.text().catch(() => null);
+        if (text === null || text.includes("\u0000")) { skipped++; continue; } // nečitljiv ili nije tekstualni
+        items.push({ parts: p.parts, text });
+      }
+      const first = all[0] && all[0].webkitRelativePath;
+      const folder = first ? first.split("/")[0] : "";
+      stripCommonDirs(items);
+      const files = items
+        .map((i) => ({ name: i.parts.join("/"), text: i.text }))
+        .sort((a, b) => {
+          const ea = ENTRY_POINT.test(a.name.split("/").pop()) ? 0 : 1;
+          const eb = ENTRY_POINT.test(b.name.split("/").pop()) ? 0 : 1;
+          return ea - eb || a.name.localeCompare(b.name, "sr");
+        });
+      return { files, skipped, folder };
+    }
+
+    /** Putanja bezbedna za repo i URL: bez kvačica, samo A-Z a-z 0-9 . _ - */
+    function safePath(name) {
+      return name.split("/").map((seg) =>
+        seg.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^A-Za-z0-9._-]/g, "-").replace(/^[-.]+/, "") || "fajl"
+      ).join("/");
+    }
+
+    /** Dva imena mogu da daju istu bezbednu putanju ("a b.cs" i "a-b.cs"); drugo dobija sufiks. */
+    function uniquePath(path, used) {
+      let p = path, n = 2;
+      const dot = path.lastIndexOf(".");
+      while (used.has(p.toLowerCase())) {
+        p = dot > path.lastIndexOf("/") ? path.slice(0, dot) + "-" + n + path.slice(dot) : path + "-" + n;
+        n++;
+      }
+      used.add(p.toLowerCase());
+      return p;
+    }
+
+    let codePick = null; // { files, skipped, folder }
+
+    function defaultCodeTitle() {
+      if (!codePick) return "Zadatak";
+      if (codePick.folder) return codePick.folder;
+      if (codePick.files.length === 1) return codePick.files[0].name;
+      return "Zadatak";
+    }
+
+    function showPick() {
+      const list = $("pickList");
+      $("codeTitle").placeholder = defaultCodeTitle();
+      if (!codePick) {
+        list.hidden = true;
+        list.innerHTML = "";
+        return;
+      }
+      list.innerHTML = codePick.files.map((f) => "<li>" + esc(f.name) + "</li>").join("");
+      list.hidden = !codePick.files.length;
+    }
+
+    async function onPick(input) {
+      const msg = $("pickMsg");
+      if (!input.files.length) return;
+      try {
+        const pick = await readCodePick(input.files);
+        if (!pick.files.length) {
+          codePick = null;
+          setMsg(msg, "U izboru nema fajlova sa kodom (preskočeno: " + pick.skipped + ").", "err");
+        } else {
+          codePick = pick;
+          setMsg(msg, plural(pick.files.length, "fajl", "fajla", "fajlova") + " sa kodom, preskočeno ostalih: " + pick.skipped + ".");
+        }
+      } catch (e) {
+        codePick = null;
+        setMsg(msg, e.message, "err");
+      }
+      input.value = "";
+      showPick();
+    }
+
+    $("pickDir").addEventListener("click", () => $("codeDir").click());
+    $("pickFiles").addEventListener("click", () => $("codeFiles").click());
+    $("codeDir").addEventListener("change", () => onPick($("codeDir")));
+    $("codeFiles").addEventListener("change", () => onPick($("codeFiles")));
+
+    let codeMsgTimer = 0;
+    $("codeForm").addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const msg = $("codeMsg");
+      clearTimeout(codeMsgTimer);
+      if (!codePick) { setMsg(msg, "Izaberi folder ili fajlove sa kodom.", "err"); return $("pickDir").focus(); }
+
+      const id = newId();
+      const title = $("codeTitle").value.trim() || defaultCodeTitle();
+      const used = new Set();
+      const files = codePick.files.map((f) => ({
+        name: f.name,
+        path: uniquePath("kod/" + id + "/" + safePath(f.name), used),
+        text: f.text
+      }));
+      const entry = {
+        id,
+        title,
+        note: $("codeNote").value.trim(),
+        files: files.map((f) => ({ name: f.name, path: f.path })),
+        createdAt: Date.now()
+      };
+
+      const btn = $("codeSave");
+      $("codeFieldset").disabled = true;
+      setMsg(msg, "");
+      try {
+        await commitChanges("kod.json", (entries) => ({
+          entries: entries.concat(entry),
+          files: files.map((f) => ({ path: f.path, content: f.text }))
+        }), "Dodaj zadatak sa kodom: " + title, (p) => busy(btn, true, p));
+        $("codeForm").reset();
+        codePick = null;
+        showPick();
+        setMsg($("pickMsg"), "");
+        setMsg(msg, "Sačuvano.", "ok");
+        codeMsgTimer = setTimeout(() => setMsg(msg, ""), 4000);
+        refreshList(lists.code);
+      } catch (e) {
+        setMsg(msg, e.message + " Ništa nije sačuvano.", "err");
+      } finally {
+        busy(btn, false);
+        $("codeFieldset").disabled = false;
+      }
+    });
+
+    /* ================= Start ================= */
+
+    mountGithubLink();
+    (async function init() {
+      const saved = store.get();
+      if (!saved) return;
+      const msg = $("loginMsg");
+      setMsg(msg, "Proveravam sačuvani token…");
+      try {
+        await gh("", { auth: saved });
+        token = saved;
+        setMsg(msg, "");
+        showEditor();
+      } catch (e) {
+        if (e.status === 401) {
+          store.clear();
+          setMsg(msg, "Prethodni token više ne važi. Unesi novi.", "err");
+        } else {
+          setMsg(msg, e.message, "err");
+        }
+      }
+    })();
+  })();
+  </script>
+</body>
+</html>
