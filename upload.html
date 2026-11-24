@@ -177,11 +177,17 @@
       constructor(status, message) { super(message); this.status = status; }
     }
 
+    /** Kratka poruka iz GitHub-ovog JSON odgovora, ako postoji. */
+    function ghMessage(body) {
+      try { return String(JSON.parse(body).message || "").slice(0, 160); } catch (_) { return ""; }
+    }
+
     function ghError(status, body) {
       if (status === 401) return "Token je istekao ili nije ispravan.";
       if (status === 403) return /rate limit/i.test(body)
         ? "GitHub je privremeno ograničio broj zahteva. Pokušaj za nekoliko minuta."
-        : "Token nema dozvolu za pisanje. Treba mu Contents: Read and write.";
+        : "Token nema dozvolu za pisanje. Treba mu Contents: Read and write, a fine-grained token mora da napravi vlasnik repoa (" +
+          SITE.owner + ")." + (ghMessage(body) ? " GitHub kaže: " + ghMessage(body) : "");
       if (status === 404) return "Repo " + SITE.owner + "/" + SITE.repo + " nije nađen, ili token nema pristup njemu.";
       if (status === 409 || status === 422) return "Fajl je u međuvremenu promenjen. Pokušaj ponovo.";
       return "GitHub greška " + status + (body ? ": " + body.slice(0, 160) : "");
